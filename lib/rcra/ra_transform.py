@@ -67,13 +67,13 @@ class Handler:
                 new_pkt /= ICMPv6NDOptPrefixInfo(layer_bytes)
             elif type(layer) == ICMPv6NDOptRDNSS:
                 if str(dns_addr) in layer.dns:
-                    logging.debug('found dnssl signature layer, returning')
+                    logging.info('found dnssl signature layer, returning')
                     return
-                logging.debug(f'ignoring layer: {layer.__class__}')
+                logging.info(f'ignoring layer: {layer.__class__}')
             elif type(layer) == ICMPv6NDOptSrcLLAddr:
                 new_pkt /= ICMPv6NDOptSrcLLAddr(layer_bytes)
             else:
-                logging.debug(f'ignoring layer: {layer.__class__}')
+                logging.info(f'ignoring layer: {layer.__class__}')
     
         # create a new prefix layer for site local
     #    site_local_prefix = ICMPv6NDOptPrefixInfo(validlifetime=600, preferredlifetime=600, prefix='fd82::', L=1, A=0)
@@ -87,7 +87,7 @@ class Handler:
 
 def main():
     logging.basicConfig(level=logging.INFO)
-    callback = Handler('tmnet6', 'lan_bridge', ['lan']).callback
+    callback = Handler('lan_bridge', 'lan_bridge', ['lan']).callback
     sniff(iface='tmnet6', filter='icmp6 and ip6[40] = 134', prn=callback)
 
 if __name__ == '__main__':

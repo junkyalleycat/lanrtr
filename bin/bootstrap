@@ -12,7 +12,7 @@ root=$(dirname $(realpath $0))/..
 venv=${1:-${root}/venv}
 test -d ${venv} || ${python} -m venv ${venv}
 . ${venv}/bin/activate
-python -m pip install wheel pyyaml scapy netifaces
+python -m pip install wheel pyyaml scapy netifaces uvloop
 
 site=$(python -c 'import site; _,=site.getsitepackages(); print(_)')
 ln -sf $(relpath ${root}/lib/rcra ${site}) ${site}

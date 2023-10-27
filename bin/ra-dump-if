@@ -1,3 +1,3 @@
 #!/bin/sh
 
-tcpdump -tttt -i re0 icmp6 and 'ip6[40] = 134 or ip6[40] = 133'
+tcpdump -e -i tmnet icmp6 and 'ip6[40] = 134 or ip6[40] = 133'

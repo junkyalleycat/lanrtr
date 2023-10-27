@@ -1,0 +1,22 @@
+#!/bin/sh
+
+# REQUIRE: DAEMON
+# PROVIDE: nbr_adv
+# KEYWORD: shutdown
+
+export PATH=/usr/local/bin:$PATH
+
+. /etc/rc.subr
+
+name="nbr_adv"
+rcvar="${name}_enable"
+
+load_rc_config ${name}
+: ${nbr_adv_enable:=no}
+: ${nbr_adv_iface:=''}
+
+pidfile="/var/run/${name}.pid"
+command="/usr/sbin/daemon"
+command_args="-c -r -t ${name} -S -T ${name} -P ${pidfile} /opt/ra-support/bin/nbr-adv -i ${nbr_adv_iface}"
+
+run_rc_command "$1"

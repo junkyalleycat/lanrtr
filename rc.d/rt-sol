@@ -1,0 +1,23 @@
+#!/bin/sh
+
+# REQUIRE: DAEMON
+# PROVIDE: rt_sol
+# KEYWORD: shutdown
+
+export PATH=/usr/local/bin:$PATH
+
+. /etc/rc.subr
+
+name="rt_sol"
+rcvar="${name}_enable"
+
+load_rc_config ${name}
+: ${rt_sol_enable:=no}
+: ${rt_sol_iface:=''}
+: ${rt_sol_script:=''}
+
+pidfile="/var/run/${name}.pid"
+command="/usr/sbin/daemon"
+command_args="-c -r -t ${name} -S -T ${name} -P ${pidfile} /opt/ra-support/bin/rt-sol -i ${rt_sol_iface} -s ${rt_sol_script}"
+
+run_rc_command "$1"

@@ -21,7 +21,6 @@ default_rt_addr = ipaddress.ip_address('fe80::aedf:9fff:fe88:594e')
 def sniffer(context, pkt_q):
     try:
         def handler(pkt):
-            print(f'sniffed on {pkt.sniffed_on}')
             context.loop.call_soon_threadsafe(pkt_q.put_nowait, pkt)
     
         rtsol_if = context.config.rtsol_if

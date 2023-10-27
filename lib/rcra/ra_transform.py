@@ -44,6 +44,8 @@ class Handler:
         self.dnssl = dnssl
 
     def callback(self, e_pkt): #pkthdr, pkt):
+        e_pkt.show()
+        return
         e_hdr = Ether(get_hdr_bytes(e_pkt))
         ip6_pkt = e_pkt.payload
         ip6_hdr = IPv6(get_hdr_bytes(ip6_pkt))
@@ -52,10 +54,14 @@ class Handler:
         ra_hdr = ICMPv6ND_RA(get_hdr_bytes(ra_pkt))
         del ra_hdr.cksum
         ra_hdr.routerlifetime = 300
+#        ra_hdr.M = 0
+#        ra_hdr.O = 0
     
         new_pkt = e_hdr / ip6_hdr / ra_hdr
     
-        dns_addr = get_link_local(self.dns_if)
+#        dns_addr = get_link_local(self.dns_if)
+#        dns_addr = ipaddress.ip_address('fe80::609d:75ff:fec2:e74e')
+        dns_addr = ipaddress.ip_address('fd82::1')
         if dns_addr is None:
             raise Exception(f'link local not found: {dns_ifname}')
         
@@ -64,11 +70,15 @@ class Handler:
             layer = ra_pkt.getlayer(i)
             layer_bytes = get_hdr_bytes(ra_pkt.getlayer(i))
             if type(layer) == ICMPv6NDOptPrefixInfo:
-                new_pkt /= ICMPv6NDOptPrefixInfo(layer_bytes)
+                new_layer = ICMPv6NDOptPrefixInfo(layer_bytes)
+                new_layer.validlifetime=600
+                new_layer.preferredlifetime=600
+                new_pkt /= new_layer
             elif type(layer) == ICMPv6NDOptRDNSS:
                 if str(dns_addr) in layer.dns:
                     logging.info('found dnssl signature layer, returning')
                     return
+                new_layer = ICMPv6NDOptRDNSS(layer_bytes)
                 logging.info(f'ignoring layer: {layer.__class__}')
             elif type(layer) == ICMPv6NDOptSrcLLAddr:
                 new_pkt /= ICMPv6NDOptSrcLLAddr(layer_bytes)
@@ -76,19 +86,20 @@ class Handler:
                 logging.info(f'ignoring layer: {layer.__class__}')
     
         # create a new prefix layer for site local
-    #    site_local_prefix = ICMPv6NDOptPrefixInfo(validlifetime=600, preferredlifetime=600, prefix='fd82::', L=1, A=0)
-    #    new_pkt /= site_local_prefix
+        site_local_prefix = ICMPv6NDOptPrefixInfo(validlifetime=600, preferredlifetime=600, prefix='fd82::', L=1, A=1)
+        new_pkt /= site_local_prefix
     
         # raincity dns
         new_pkt /= ICMPv6NDOptRDNSS(lifetime=600, dns=[str(dns_addr)])
         new_pkt /= ICMPv6NDOptDNSSL(lifetime=600, searchlist=self.dnssl)
     
-        sendp(new_pkt, iface=self.inject_if, verbose=False) #tmnet6')
+        new_pkt.show()
+#        sendp(new_pkt, iface=self.inject_if, verbose=False) #tmnet6')
 
 def main():
-    logging.basicConfig(level=logging.INFO)
-    callback = Handler('lan_bridge', 'lan_bridge', ['lan']).callback
-    sniff(iface='tmnet6', filter='icmp6 and ip6[40] = 134', prn=callback)
+    logging.basicConfig(level=logging.DEBUG)
+    callback = Handler('re0', 'lan_bridge', ['lan']).callback
+    sniff(iface='re0', filter='icmp6 and ip6[40] = 134', prn=callback)
 
 if __name__ == '__main__':
     main()

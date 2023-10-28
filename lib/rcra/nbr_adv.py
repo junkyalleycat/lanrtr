@@ -44,7 +44,7 @@ async def worker(config, pkt_q):
 Config = namedtuple('Config', ['nbradv_if', 'rt_addr'])
 
 async def main():
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.INFO)
 
     loop = asyncio.get_event_loop()
     finish = asyncio.Event()
@@ -75,8 +75,6 @@ async def main():
 
     worker_t = asyncio.create_task(worker(config, pkt_q))
     finish_t = asyncio.create_task(finish.wait())
-
-    logging.debug(f'pid: {os.getpid()}')
 
     await asyncio.wait([finish_t, worker_t], return_when=asyncio.FIRST_COMPLETED)
     finish.set()

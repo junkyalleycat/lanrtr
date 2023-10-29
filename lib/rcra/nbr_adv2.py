@@ -16,6 +16,8 @@ from lru import LRU
 from .common import *
 
 default_rt_addr = ipaddress.ip_address('fe80::aedf:9fff:fe88:594e')
+pltime = 60
+vltime = 300
 
 def sniffer(config, loop, pkt_q):
     try:
@@ -30,11 +32,9 @@ def send_pkt(if_name, pkt):
 
 # TODO consider consulting ndp table insteead?
 async def worker(config, pkt_q):
-#    nbrsols = {}
     nbrsols = LRU(10)
     while True:
         pkt = await pkt_q.get()
-#        print(pkt.time)
         if type(pkt.getlayer(2)) is ICMPv6ND_NS:
             if pkt.sniffed_on != config.wan_if:
                 continue
@@ -54,16 +54,15 @@ async def worker(config, pkt_q):
                 lan_nbrsol = lan_nbrsol.build()
                 send_pkt(config.lan_if, lan_nbrsol)
         elif type(pkt.getlayer(2)) is ICMPv6ND_NA:
-            print(len(nbrsols))
             if pkt.sniffed_on != config.lan_if:
                 continue
             lan_nbradv = pkt
             tgt = ipaddress.ip_address(lan_nbradv.getlayer(2).tgt)
-            nbrsol = nbrsols.pop(tgt, None)
-            if nbrsol is not None:
+            wan_nbrsol = nbrsols.pop(tgt, None)
+            if wan_nbrsol is not None:
                 wan_if_info = get_if_info(config.wan_if)
-                wan_nbradv = Ether(src=wan_if_info.mac, dst=nbrsol.src)
-                wan_nbradv /= IPv6(src=wan_if_info.addr, dst=nbrsol.getlayer(1).src)
+                wan_nbradv = Ether(src=wan_if_info.mac, dst=wan_nbrsol.src)
+                wan_nbradv /= IPv6(src=wan_if_info.addr, dst=wan_nbrsol.getlayer(1).src)
                 wan_nbradv /= ICMPv6ND_NA(R=1, S=1, O=1, tgt=tgt)
                 wan_nbradv /= ICMPv6NDOptDstLLAddr(lladdr=wan_if_info.mac)
                 wan_nbradv = wan_nbradv.build()
@@ -74,7 +73,7 @@ async def worker(config, pkt_q):
 Config = namedtuple('Config', ['wan_if', 'lan_if', 'rt_addr'])
 
 async def main():
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(level=logging.DEBUG)
 
     loop = asyncio.get_event_loop()
     finish = asyncio.Event()

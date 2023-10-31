@@ -15,9 +15,10 @@ load_rc_config ${name}
 : ${rt_sol_enable:=no}
 : ${rt_sol_iface:=''}
 : ${rt_sol_script:=''}
+: ${rt_sol_north_rt_addr:=''}
 
 pidfile="/var/run/${name}.pid"
 command="/usr/sbin/daemon"
-command_args="-c -r -t ${name} -S -T ${name} -P ${pidfile} /opt/ra-support/bin/rt-sol -i ${rt_sol_iface} -s ${rt_sol_script}"
+command_args="-c -t ${name} -S -T ${name} -P ${pidfile} /opt/ra-support/bin/rt-sol -i ${rt_sol_iface} -s ${rt_sol_script} --north-rt-addr ${rt_sol_north_rt_addr}"
 
 run_rc_command "$1"

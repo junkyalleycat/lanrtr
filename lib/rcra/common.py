@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import asyncio
+import threading
+from scapy.all import sniff
 from collections import namedtuple
 import netifaces
 import ipaddress
@@ -110,4 +113,44 @@ class ICMPv6JSONEncoder(json.JSONEncoder):
                 o[field_name] = getattr(obj, field_name)
             return o
         return json.JSONEncoder.default(self, obj)
+
+async def sniffer(if_names, pfilter, pkt_handler):
+    loop = asyncio.get_event_loop()
+
+    class SnifferThread(threading.Thread):
+
+        def __init__(self):
+            super().__init__(daemon=True)
+            self.run_s = threading.Event()
+            self.run_e = None
+
+        def run(self):
+
+            def prn(pkt):
+                loop.call_soon_threadsafe(pkt_handler, pkt)
+
+            def sfilter(pkt):
+                return self.run_s.is_set()
+
+            try:
+                sniff(store=0, iface=if_names, filter=pfilter, prn=prn, stop_filter=sfilter)
+            except BaseException as e:
+                self.run_e = e
+
+        def stop(self):
+            self.run_s.set()
+
+        def join(self):
+            while self.is_alive():
+                if self.run_s.wait(timeout=1):
+                    break
+            if self.run_e is not None:
+                raise self.run_e
+
+    sniffer_th = SnifferThread()
+    sniffer_th.start()
+    try:
+        await asyncio.get_event_loop().run_in_executor(None, sniffer_th.join)
+    finally:
+        sniffer_th.stop()
 

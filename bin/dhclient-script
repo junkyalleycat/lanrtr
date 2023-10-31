@@ -1,4 +1,0 @@
-#!/bin/sh
-
-set > /tmp/dhclient-script.set
-echo $@ > /tmp/dhclient-script.args

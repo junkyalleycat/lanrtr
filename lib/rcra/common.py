@@ -23,6 +23,8 @@ ipv6mcast_01 = IPv6MCast('33:33:00:00:00:01', ipaddress.ip_address('ff02::1'))
 # all routers
 ipv6mcast_02 = IPv6MCast('33:33:00:00:00:02', ipaddress.ip_address('ff02::2'))
 
+IfAddrs = namedtuple('IfAddrs', ['lladdr', 'linklocal', 'gaddrs'])
+
 IfInfo = namedtuple('IfInfo', ['mac', 'addr'])
 
 def linklocal_to_mac(linklocal):
@@ -42,6 +44,25 @@ def linklocal_to_mac(linklocal):
     mac_parts[4] = ipv6_parts[7][0:2]
     mac_parts[5] = ipv6_parts[7][2:4]
     return ':'.join(mac_parts)
+
+def get_if_addrs(ifname):
+    addrs = netifaces.ifaddresses(ifname)
+    lladdr, = addrs[netifaces.AF_LINK]
+    lladdr = lladdr['addr']
+    linklocal = None
+    gaddrs = []
+    for inet6addr in addrs[netifaces.AF_INET6]:
+        addr = inet6addr['addr']
+        if '%' in addr:
+            addr = addr.split('%')[0]
+        inet6addr = ipaddress.ip_address(addr)
+        if inet6addr.is_link_local:
+            linklocal = inet6addr
+        elif inet6addr.is_global:
+            gaddrs.append(inet6addr)
+    if linklocal is None:
+        raise Exception()
+    return IfAddrs(lladdr, linklocal, gaddrs)
 
 def get_if_info(ifname):
     addrs = netifaces.ifaddresses(ifname)

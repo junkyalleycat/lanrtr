@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from pathlib import Path
 import json
 import ipaddress
 import subprocess
@@ -8,6 +9,46 @@ import netifaces
 
 lan_if = 'lan'
 addr_suffix = '1982'
+
+def ifconfig6(iface, *args):
+    print(f'ifconfig {iface} inet6 {" ".join(args)}')
+    subprocess.run(['/sbin/ifconfig', iface, 'inet6', *args], check=True)
+
+def route6(*args):
+    print(f'route -6 {" ".join(args)}')
+    subprocess.run(['/sbin/route', '-6', *args], check=True)
+
+def get_default_route():
+    netstat_data = json.loads(subprocess.check_output(['/usr/bin/netstat', '--libxo', 'json', '-nr6'], text=True))
+    default_route = None
+    for family in netstat_data.get('statistics', {}).get('route-information', {}).get('route-table', {}).get('rt-family', {}):
+        if family.get('address-family', None) != 'Internet6':
+            continue
+        for rt in family.get('rt-entry', {}):
+            if rt.get('destination', None) != 'default':
+                continue
+            if default_route is not None:
+                raise Exception('multiple default routes found')
+            default_route = ipaddress.ip_address(rt.get('gateway'))
+    return default_route
+
+def delete_default_route():
+    default_route = get_default_route()
+    if default_route is not None:
+        route6('delete', 'default')
+
+def get_global_addrs(iface):
+    global_addrs = set()
+    for inet6 in netifaces.ifaddresses(iface).get(netifaces.AF_INET6, []):
+        inet6_addr = ipaddress.ip_address(inet6['addr'])
+        if not inet6_addr.is_global:
+            continue
+        global_addrs.add(inet6_addr)
+    return global_addrs
+
+def delete_global_addrs(iface):
+    for global_addr in get_global_addrs(iface):
+        ifconfig6(iface, str(global_addr), '-alias')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -24,42 +65,41 @@ if __name__ == '__main__':
     action = args.action
 
     if action == 'start':
-        pass # noop
+        delete_global_addrs(lan_if)
+        delete_default_route()
     elif action == 'rtadv':
         rtadv_src_addr = args.rtadv_src_addr
         rtadv_file = args.rtadv_file
-        with open(rtadv_file, 'r') as stream:
-            rtadv = json.loads(stream.read())
-        global_prefixes = []
+        rtadv = json.loads(Path(args.rtadv_file).read_text())
+
+        # load the rtadv
+        new_global_prefixes = []
         for option in rtadv['options']:
             if option['type'] == 3:
-                global_prefixes.append(ipaddress.ip_network(f'{option["prefix"]}/{option["prefixlen"]}'))
-        if len(global_prefixes) == 0:
-            raise Exception('no global prefixes found in rtadv')
+                new_global_prefixes.append(ipaddress.ip_network(f'{option["prefix"]}/{option["prefixlen"]}'))
     
-        # set the default interface
-        expire_t = 300
-        subprocess.run(['/sbin/route', '-6', 'delete', 'default'], check=False)
-        subprocess.run(['/sbin/route', '-6', 'add', '-expire', f'+{expire_t}', 'default', f'{rtadv_src_addr}%{args.i}'], check=True)
-    
-        # set the global prefixes as addresses on lan, remove all others
-        addrs = netifaces.ifaddresses(lan_if)
-        if netifaces.AF_INET6 in addrs:
-            for addr6info in addrs[netifaces.AF_INET6]:
-                addr6 = ipaddress.ip_address(addr6info['addr'])
-                if addr6.is_global:
-                    found = False
-                    for global_prefix in global_prefixes:
-                        if addr6 in global_prefix:
-                            found = True
-                            break
-                    if not found:
-                        subprocess.run(['/sbin/ifconfig', lan_if, 'inet6', str(addr6), '-alias'], check=True)
-        for global_prefix in global_prefixes:
-            addr6 = ipaddress.ip_address(f'{global_prefix.network_address}{addr_suffix}')
-            subprocess.run(['/sbin/ifconfig', lan_if, 'inet6', f'{addr6}/{global_prefix.prefixlen}'], check=True)
+        # first add our global addresses if they aren't already
+        global_addrs = get_global_addrs(lan_if)
+        new_global_addrs = set()
+        for new_global_prefix in new_global_prefixes:
+            new_global_addr = ipaddress.ip_address(f'{new_global_prefix.network_address}{addr_suffix}')
+            new_global_addrs.add(new_global_addr)
+            if new_global_addr not in global_addrs:
+                ifconfig6(lan_if, f'{str(new_global_addr)}/{new_global_prefix.prefixlen}')
+
+        # now delete the old default and add the new one 
+        new_default_route = ipaddress.ip_address(f'{rtadv_src_addr}%{args.i}')
+        if get_default_route() != new_default_route:
+            delete_default_route()
+            route6('add', 'default', str(new_default_route))
+
+        # next step, remove old global prefixes
+        for global_addr in (get_global_addrs(lan_if) - new_global_addrs):
+            ifconfig6(lan_if, str(global_addr), '-alias')
+
     elif action == 'stop':
-        subprocess.run(['/sbin/route', '-6', 'delete', 'default'], check=False)
+        delete_global_addrs(lan_if)
+        delete_default_route()
     else:
         raise Exception(f'unknown action: {action}')
 

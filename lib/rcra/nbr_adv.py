@@ -15,9 +15,6 @@ from lru import LRU
 
 from .common import *
 
-pltime = 60
-vltime = 300
-
 async def send_pkt(if_name, pkt):
     send_f = functools.partial(sendp, pkt, iface=if_name, verbose=False)
     await asyncio.get_event_loop().run_in_executor(None, send_f)
@@ -40,9 +37,10 @@ async def send_nbrsol(if_name, src, dst, tgt):
     logging.debug(f'soliciting: {tgt}')
     await send_pkt(if_name, nbrsol)
 
-# TODO consider consulting ndp table insteead?
+# TODO consider consulting ndp table instead?
+# TODO consider caching nbradv?
 async def worker(config, pkt_q):
-    nbrsols = LRU(10)
+    nbrsols = LRU(100)
     while True:
         pkt = await pkt_q.get()
         pkt_type = type(pkt.getlayer(2))

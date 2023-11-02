@@ -3,7 +3,6 @@
 from collections import namedtuple
 import tempfile
 import os
-from scapy.all import sniff
 from scapy.all import sendp
 import uvloop
 import asyncio
@@ -28,8 +27,7 @@ async def send_rtsol(config):
     await asyncio.get_event_loop().run_in_executor(None, functools.partial(sendp, rtsol, iface=rtsol_if, verbose=False))
 
 # SIGUSR1 should trigger a redo of the outer loop
-async def worker(config, pkt_q, resol_s):
-    previous_rtadv = None
+async def worker(config, pkt_q, resol_s, rtadv_action_handler):
     while True:
         if not resol_s.locked():
             await send_rtsol(config)
@@ -42,27 +40,52 @@ async def worker(config, pkt_q, resol_s):
         if (config.north_rt_addr is not None) and (config.north_rt_addr != rtadv_src_addr):
             logging.debug(f'ignoring rtadv from {rtadv_src_addr}')
             continue
-        if (not resol_s.locked()) or (rtadv != previous_rtadv):
-            await config.rtadv_action(rtadv_src_addr, rtadv)
-            previous_rtadv = rtadv
+        await rtadv_action_handler.rtadv(rtadv_src_addr, rtadv)
         if not resol_s.locked():
             await resol_s.acquire()
 
-async def invoke_rtadv_script(rtadv_script, rtsol_if, rtadv_src_addr, rtadv):
-    with tempfile.NamedTemporaryFile() as rtadv_file:
-        rtadv_file.write(json.dumps(rtadv.getlayer(2), cls=ICMPv6JSONEncoder).encode())
-        rtadv_file.flush()
+# invoke the user script, simply log errors
+class ScriptActionHandler:
+    
+    def __init__(self, config, rtadv_script):
+        self.config = config
+        self.rtadv_script = rtadv_script
+
+    async def invoke(self, action, *extra_args):
+        args = [self.rtadv_script, action, '-i', self.config.rtsol_if, *extra_args]
         try:
-            args = [rtadv_script, 'rtadv', '-i', rtsol_if, '--rtadv-src-addr', str(rtadv_src_addr), '--rtadv-file', rtadv_file.name]
             child_t = await asyncio.create_subprocess_exec(*args)
-            await child_t.wait()
-        except Exception as e:
+            if (await child_t.wait()) != 0:
+                logging.error("unknown script error")
+        except BaseException as e:
             logging.error(e)
 
-async def dump_rtadv(rtadv_src_addr, rtadv):
-    print(json.dumps({'rtadv_src_addr': str(rtadv_src_addr), 'rtadv': rtadv.getlayer(2)}, cls=ICMPv6JSONEncoder))
+    async def start(self):
+        await self.invoke('start')
 
-Config = namedtuple('Config', ['rtsol_if', 'rtadv_action', 'north_rt_addr'])
+    async def rtadv(self, rtadv_src_addr, rtadv):
+        with tempfile.NamedTemporaryFile() as rtadv_file:
+            rtadv_file.write(json.dumps(rtadv.getlayer(2), cls=ICMPv6JSONEncoder).encode())
+            rtadv_file.flush()
+            await self.invoke('rtadv', '--rtadv-src-addr', str(rtadv_src_addr), '--rtadv-file', rtadv_file.name)
+
+    async def stop(self):
+        await self.invoke('stop')
+
+# default debug handler
+class DumpActionHandler:
+
+    async def start(self):
+        print("action:start")
+
+    async def rtadv(self, rtadv_src_addr, rtadv):
+        print("action:rtadv")
+        print(json.dumps({'rtadv_src_addr': str(rtadv_src_addr), 'rtadv': rtadv.getlayer(2)}, cls=ICMPv6JSONEncoder))
+
+    async def stop(self):
+        print("action:stop")
+
+Config = namedtuple('Config', ['rtsol_if', 'north_rt_addr'])
 
 async def main():
     logging.basicConfig(level=logging.INFO)
@@ -80,24 +103,19 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', metavar='rtsol_if', required=True)
     parser.add_argument('-s', metavar='rtadv_script')
-    parser.add_argument('--north-rt-addr')
+    parser.add_argument('--north-rt-addr', type=ipaddress.ip_address)
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 
     if args.debug:
         logging.root.setLevel(logging.DEBUG)
 
+    config = Config(args.i, args.north_rt_addr)
+
     if args.s is None:
-        rtadv_action = dump_rtadv
+        rtadv_action_handler = DumpActionHandler()
     else:
-        rtadv_action = functools.partial(invoke_rtadv_script, args.s, args.i)
-
-    if args.north_rt_addr is None:
-        north_rt_addr = None
-    else:
-        north_rt_addr = ipaddress.ip_address(args.north_rt_addr)
-
-    config = Config(args.i, rtadv_action, north_rt_addr)
+        rtadv_action_handler = ScriptActionHandler(config, args.s)
 
     pkt_q = asyncio.Queue()
 
@@ -109,14 +127,18 @@ async def main():
             pass
     loop.add_signal_handler(signal.SIGUSR1, sigusr1)
 
+    await rtadv_action_handler.start()
+
     finish_t = asyncio.create_task(finish.wait())
     sniffer_if_names = [config.rtsol_if]
     sniffer_pfilter = 'icmp6 and ip6[40] == 134'
     sniffer_t = asyncio.create_task(sniffer(sniffer_if_names, sniffer_pfilter, pkt_q.put_nowait))
-    worker_t = asyncio.create_task(worker(config, pkt_q, resol_s))
+    worker_t = asyncio.create_task(worker(config, pkt_q, resol_s, rtadv_action_handler))
 
     await asyncio.wait([finish_t, sniffer_t, worker_t], return_when=asyncio.FIRST_COMPLETED)
     finish.set()
+
+    await rtadv_action_handler.stop()
 
 if __name__ == '__main__':
     asyncio.run(main())

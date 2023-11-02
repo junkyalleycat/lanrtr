@@ -58,3 +58,7 @@ The basic setup to make this stuff work is as follows:
 
 At this point, assuming you have a script to parse the rt-sol and setup the default route / lan, then you should have a working ipv6 lan network where you control the subnet.  You might need to tweak the configuration and the code to bend it to work with your setup, as will be obvious if
 you read through any of it the code was basically written to serve a specific setup, and does not have a lot of flexability or configuration options.
+
+## Requirements
+1) python >= 3.8
+2) BPF

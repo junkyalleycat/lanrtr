@@ -17,8 +17,17 @@ load_rc_config ${name}
 : ${rt_sol_script:=''}
 : ${rt_sol_north_rt_addr:=''}
 
+extra_commands=reload
+
 pidfile="/var/run/${name}.pid"
+pidfile_actual="/var/run/${name}.actual.pid"
 command="/usr/sbin/daemon"
-command_args="-c -t ${name} -S -T ${name} -P ${pidfile} /opt/ra-support/bin/rt-sol -i ${rt_sol_iface} -s ${rt_sol_script} --north-rt-addr ${rt_sol_north_rt_addr}"
+command_args="-c -t ${name} -S -T ${name} -P ${pidfile} -p ${pidfile_actual} /opt/ra-support/bin/rt-sol -i ${rt_sol_iface} -s ${rt_sol_script} --north-rt-addr ${rt_sol_north_rt_addr}"
+reload_cmd="rt_sol_reload"
+
+rt_sol_reload()
+{
+    kill -s SIGUSR1 $(cat ${pidfile_actual})
+}
 
 run_rc_command "$1"

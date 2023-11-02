@@ -18,12 +18,13 @@ from .common import *
 
 async def send_rtsol(config):
     rtsol_if = config.rtsol_if
-    rtsol_if_info = get_if_info(rtsol_if)
-    rtsol = Ether(src=rtsol_if_info.mac, dst=ipv6mcast_02.mac)
-    rtsol /= IPv6(src=rtsol_if_info.addr, dst=ipv6mcast_02.addr)
+    rtsol_if_addrs = get_if_addrs(rtsol_if)
+    rtsol = Ether(src=rtsol_if_addrs.lladdr, dst=ipv6mcast_02.mac)
+    rtsol /= IPv6(src=rtsol_if_addrs.linklocal, dst=ipv6mcast_02.addr)
     rtsol /= ICMPv6ND_RS()
-    rtsol /= ICMPv6NDOptSrcLLAddr(lladdr=rtsol_if_info.mac)
+    rtsol /= ICMPv6NDOptSrcLLAddr(lladdr=rtsol_if_addrs.lladdr)
     rtsol = rtsol.build()
+    logging.debug(f'soliciting router: {ipv6mcast_02.addr}')
     await asyncio.get_event_loop().run_in_executor(None, functools.partial(sendp, rtsol, iface=rtsol_if, verbose=False))
 
 # SIGUSR1 should trigger a redo of the outer loop
@@ -37,6 +38,7 @@ async def worker(config, pkt_q, resol_s):
         except asyncio.TimeoutError:
             continue
         rtadv_src_addr = ipaddress.ip_address(rtadv.getlayer(1).src)
+        logging.debug(f'received router advertisement: {rtadv_src_addr}')
         if (config.north_rt_addr is not None) and (config.north_rt_addr != rtadv_src_addr):
             logging.debug(f'ignoring rtadv from {rtadv_src_addr}')
             continue
@@ -78,7 +80,7 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', metavar='rtsol_if', required=True)
     parser.add_argument('-s', metavar='rtadv_script')
-    parser.add_argument('--north-rt-addr', required=True)
+    parser.add_argument('--north-rt-addr')
     parser.add_argument('--debug', action='store_true')
     args = parser.parse_args()
 

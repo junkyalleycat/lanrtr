@@ -27,8 +27,17 @@ ipv6mcast_01 = IPv6MCast('33:33:00:00:00:01', ipaddress.ip_address('ff02::1'))
 ipv6mcast_02 = IPv6MCast('33:33:00:00:00:02', ipaddress.ip_address('ff02::2'))
 
 IfAddrs = namedtuple('IfAddrs', ['lladdr', 'linklocal', 'gaddrs'])
+class IfAddrs2(namedtuple('IfAddrs', ['link_layers', 'link_locals', 'globals'])):
 
-IfInfo = namedtuple('IfInfo', ['mac', 'addr'])
+    @property
+    def link_layer(self):
+        link_layer, = self.link_layers
+        return link_layer
+
+    @property
+    def link_local(self):
+        link_local, = self.link_locals
+        return link_local
 
 def linklocal_to_mac(linklocal):
     assert linklocal.is_link_local
@@ -50,39 +59,24 @@ def linklocal_to_mac(linklocal):
 
 def get_if_addrs(ifname):
     addrs = netifaces.ifaddresses(ifname)
-    lladdr, = addrs[netifaces.AF_LINK]
-    lladdr = lladdr['addr']
-    linklocal = None
-    gaddrs = []
-    for inet6addr in addrs[netifaces.AF_INET6]:
-        addr = inet6addr['addr']
-        if '%' in addr:
-            addr = addr.split('%')[0]
-        inet6addr = ipaddress.ip_address(addr)
-        if inet6addr.is_link_local:
-            linklocal = inet6addr
-        elif inet6addr.is_global:
-            gaddrs.append(inet6addr)
-    if linklocal is None:
-        raise Exception()
-    return IfAddrs(lladdr, linklocal, gaddrs)
-
-def get_if_info(ifname):
-    addrs = netifaces.ifaddresses(ifname)
-    lladdr, = addrs[netifaces.AF_LINK]
-    lladdr = lladdr['addr']
-    linklocal = None
-    for inet6addr in addrs[netifaces.AF_INET6]:
-        addr = inet6addr['addr']
-        if '%' in addr:
-            addr = addr.split('%')[0]
-        inet6addr = ipaddress.ip_address(addr)
-        if inet6addr.is_link_local:
-            linklocal = inet6addr
-            break
-    if linklocal is None:
-        raise Exception()
-    return IfInfo(lladdr, linklocal)
+    link_layers = []
+    for link in addrs[netifaces.AF_LINK]:
+        link_layers.append(link['addr']) 
+    link_layer, = link_layers
+    link_locals = []
+    globals_ = []
+    for inet6 in addrs[netifaces.AF_INET6]:
+        inet6_addr = inet6['addr']
+        if '%' in inet6_addr:
+            inet6_addr = inet6_addr.split('%')[0]
+        inet6_addr = ipaddress.ip_address(inet6_addr)
+        if inet6_addr.is_link_local:
+            link_locals.append(inet6_addr)
+        elif inet6_addr.is_global:
+            globals_.append(inet6_addr)
+    link_layer, = link_layers
+    link_local, = link_locals
+    return IfAddrs(link_layer, link_local, globals_)
 
 class ICMPv6JSONEncoder(json.JSONEncoder):
 
@@ -127,7 +121,8 @@ async def sniffer(if_names, pfilter, pkt_handler):
         def run(self):
 
             def prn(pkt):
-                loop.call_soon_threadsafe(pkt_handler, pkt)
+                if not self.run_s.is_set():
+                    loop.call_soon_threadsafe(pkt_handler, pkt)
 
             def sfilter(pkt):
                 return self.run_s.is_set()

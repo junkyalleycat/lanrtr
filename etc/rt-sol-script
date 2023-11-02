@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+
+import json
+import ipaddress
+import subprocess
+import argparse
+import netifaces
+
+lan_if = 'lan'
+addr_suffix = '1982'
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='action')
+    subparser = subparsers.add_parser('start')
+    subparser.add_argument('-i', metavar='interface', required=True)
+    subparser = subparsers.add_parser('stop')
+    subparser.add_argument('-i', metavar='interface', required=True)
+    subparser = subparsers.add_parser('rtadv')
+    subparser.add_argument('-i', metavar='interface', required=True)
+    subparser.add_argument('--rtadv-src-addr', metavar='rtadv_src_addr', required=True)
+    subparser.add_argument('--rtadv-file', metavar='rtadv_file', required=True)
+    args = parser.parse_args()
+    action = args.action
+
+    if action == 'start':
+        pass # noop
+    elif action == 'rtadv':
+        rtadv_src_addr = args.rtadv_src_addr
+        rtadv_file = args.rtadv_file
+        with open(rtadv_file, 'r') as stream:
+            rtadv = json.loads(stream.read())
+        global_prefixes = []
+        for option in rtadv['options']:
+            if option['type'] == 3:
+                global_prefixes.append(ipaddress.ip_network(f'{option["prefix"]}/{option["prefixlen"]}'))
+        if len(global_prefixes) == 0:
+            raise Exception('no global prefixes found in rtadv')
+    
+        # set the default interface
+        expire_t = 300
+        subprocess.run(['/sbin/route', '-6', 'delete', 'default'], check=False)
+        subprocess.run(['/sbin/route', '-6', 'add', '-expire', f'+{expire_t}', 'default', f'{rtadv_src_addr}%{args.i}'], check=True)
+    
+        # set the global prefixes as addresses on lan, remove all others
+        addrs = netifaces.ifaddresses(lan_if)
+        if netifaces.AF_INET6 in addrs:
+            for addr6info in addrs[netifaces.AF_INET6]:
+                addr6 = ipaddress.ip_address(addr6info['addr'])
+                if addr6.is_global:
+                    found = False
+                    for global_prefix in global_prefixes:
+                        if addr6 in global_prefix:
+                            found = True
+                            break
+                    if not found:
+                        subprocess.run(['/sbin/ifconfig', lan_if, 'inet6', str(addr6), '-alias'], check=True)
+        for global_prefix in global_prefixes:
+            addr6 = ipaddress.ip_address(f'{global_prefix.network_address}{addr_suffix}')
+            subprocess.run(['/sbin/ifconfig', lan_if, 'inet6', f'{addr6}/{global_prefix.prefixlen}'], check=True)
+    elif action == 'stop':
+        subprocess.run(['/sbin/route', '-6', 'delete', 'default'], check=False)
+    else:
+        raise Exception(f'unknown action: {action}')
+

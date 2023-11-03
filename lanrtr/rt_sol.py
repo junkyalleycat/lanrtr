@@ -4,7 +4,6 @@ from collections import namedtuple
 import tempfile
 import os
 from scapy.all import sendp
-import uvloop
 import asyncio
 import logging
 import signal
@@ -140,6 +139,6 @@ async def main():
 
     await rtadv_action_handler.stop()
 
-if __name__ == '__main__':
+def entry():
     asyncio.run(main())
 

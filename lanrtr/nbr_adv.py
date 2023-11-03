@@ -6,7 +6,6 @@ from collections import namedtuple
 import asyncio
 import logging
 import argparse
-import uvloop
 import signal
 import threading
 import functools
@@ -127,6 +126,6 @@ async def main():
     await asyncio.wait([finish_t, sniffer_t, worker_t], return_when=asyncio.FIRST_COMPLETED)
     finish.set()
 
-if __name__ == '__main__':
+def entry():
     asyncio.run(main())
 

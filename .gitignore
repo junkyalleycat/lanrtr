@@ -1,2 +1,2 @@
 dist/
-lanrtr.egg-info/
+*.egg-info/

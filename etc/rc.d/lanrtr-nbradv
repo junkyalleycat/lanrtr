@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# REQUIRE: DAEMON
+# PROVIDE: lanrtr_nbradv
+# KEYWORD: shutdown
+
+export PATH=/usr/local/bin:$PATH
+
+. /etc/rc.subr
+
+name="lanrtr_nbradv"
+rcvar="${name}_enable"
+
+load_rc_config ${name}
+: ${lanrtr_nbradv_enable:=no}
+: ${lanrtr_nbradv_wan_if:=''}
+: ${lanrtr_nbradv_lan_if:=''}
+: ${lanrtr_nbradv_north_rt_addr:=''}
+
+pidfile="/var/run/${name}.pid"
+command="/usr/sbin/daemon"
+command_args="-c -t ${name} -S -T ${name} -P ${pidfile} /usr/local/bin/lanrtr-nbradv --wan-if ${lanrtr_nbradv_wan_if} --lan-if ${lanrtr_nbradv_lan_if} --north-rt-addr ${lanrtr_nbradv_north_rt_addr}"
+
+run_rc_command "$1"

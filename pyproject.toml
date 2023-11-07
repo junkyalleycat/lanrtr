@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "lanrtr"
 version = "0.1"
 authors = [
-  { name="Drew Gochenaur", email="junkyalleycat@raincity.io" },
+  { name="Drew Gochenaur" }
 ]
 requires-python = ">=3.8"
 dependencies = [
